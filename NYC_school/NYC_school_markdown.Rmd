@@ -1,0 +1,175 @@
+---
+title: 'Guided Project: Exploring NYC Schools Survey Data'
+output:
+  html_document:
+    df_print: paged
+data: March 15, 2020
+---
+
+This project will analize data from the New York City school department to understand whether parent, teacher, and student perceptions of the following factors affect average school SAT scores (an indicator of academic performance):
+
+1. Safety
+2. Engagement
+3. Communication
+4. Academics
+
+The data, collected in 2011, are publicicly available and can be accessed [here] https://data.cityofnewyork.us/Education/2011-NYC-School-Survey/mnz3-dyi8
+
+I'll start by installing the packages that I will need for this analysis: 
+
+
+```{r}
+library(readr)
+library(dplyr)
+library(stringr)
+library(purrr)
+library(tidyr)
+library(ggplot2)
+```
+
+Import the data into r
+```{r}
+setwd("/Users/avril/Desktop/NYC_school")
+combined <- read_csv("combined.csv")
+gened <- read_tsv("masterfile11_gened_final.txt")
+d75 <- read_tsv("masterfile11_d75_final.txt")
+```
+
+Selecting rows from both databases to get rid of unnecessary variables. 
+```{r}
+highschool <- gened %>% filter(schooltype == "High School") %>% select(dbn:aca_tot_11 )
+
+selctd75 <- d75 %>% select(dbn: aca_tot_11)
+
+```
+ 
+Combining both databases 
+
+```{r}
+binding <- highschool %>% bind_rows(selctd75)
+```
+
+Rename DBN variable to combine with combined database
+```{r}
+binding <- binding %>% rename(DBN = dbn)
+```
+
+Combined data frame with binding function
+```{r}
+data_monster <- left_join(binding, combined, by = "DBN") 
+
+data_cookie <- combined %>% left_join(binding, by = "DBN")
+```
+
+Creating Correlation Matrix
+```{r}
+
+correlation_matrix <- data_cookie %>% select(avg_sat_score, saf_p_11:aca_tot_11) %>% cor(use = "pairwise.complete.obs")
+
+```
+
+Convertiing correlation matrix into tibble.
+```{r}
+correlation_tibble <- correlation_matrix %>% as_tibble(rownames = "variable")
+```
+
+Testing for strong correlations.
+```{r}
+high_corr <- correlation_tibble %>% select(variable, avg_sat_score) %>%
+  filter(avg_sat_score > 0.25 | avg_sat_score  <0.25 )
+```
+
+Scatter plots for correlation. 
+```{r}
+create_scatter <- function(x, y) {     
+  ggplot(data = data_cookie) + 
+    aes_string(x = x, y = y) +
+    geom_point(alpha = 0.3) +
+    theme(panel.background = element_rect(fill = "white"))
+}
+x_var <- high_corr$variable[2:5]
+y_var <- "avg_sat_score"
+```
+
+ggplot Scatter Plots
+```{r}
+map2(x_var, y_var, create_scatter)
+```
+
+Creating new dataframe to investigate differences in parent, student, and teacher responses
+```{r}
+surveycompare <- data_cookie %>% gather(key = "survey question", value = score, 
+                                        saf_p_11: aca_tot_11)
+
+```
+
+creating response type and question, 
+```{r}
+combined_survey <- surveycompare %>% mutate(response_type = str_sub(`survey question`, 4, 6)) %>% mutate(question= str_sub(`survey question`, 1, 3))
+```
+
+Renaming response types in survey
+```{r}
+gather_responses <- combined_survey %>% mutate(response_type = ifelse(response_type == "_p_", "parent", ifelse(response_type == "_t_", "teacher", ifelse("_s_", "student", ifelse(response_type == "_to_", "total", "NA")))))
+
+
+
+```
+
+Boxplot to see parent, student, and teacher responses to survey
+```{r}
+
+gather_responses %>%
+  filter(response_type != "total") %>%
+  ggplot() +
+  aes(x = question, y = score, fill = response_type) +
+  geom_boxplot()
+
+```
+
+grouping sat scores by race/ethnicity
+```{r}
+combined_race <- data_cookie %>%
+  gather(key = "race", value = percent, asian_per:white_per)
+
+ggplot(data = combined_race) +
+    aes(x = percent, y = avg_sat_score, color = race) +
+     geom_point()
+
+ggplot(data = combined_race) +
+  aes(x = percent, y = avg_sat_score, color = race) +
+  geom_point() + facet_wrap(~race)
+```
+
+grouping sat scores by gender
+```{r}
+combined_gender <- data_cookie %>%
+  gather(key = "gender", value = percent, male_per:female_per)
+
+ggplot(data = combined_gender) +
+    aes(x = percent, y = avg_sat_score, color = gender) +
+     geom_point()
+
+ggplot(data = combined_gender) +
+  aes(x = percent, y = avg_sat_score, color = gender) +
+  geom_point() + facet_wrap(~gender)
+
+ggplot(data = combined_gender) +
+  aes(x = percent, y = avg_sat_score, color = gender) +
+  geom_boxplot() 
+
+```
+
+
+boxplots to explore class size/avg sat score correlation
+```{r}
+summary <- data_cookie %>%
+  group_by(boro) %>%
+  drop_na(boro)
+
+ggplot(data = summary) +
+    aes(x = avg_sat_score, y = avg_class_size, color = boro) +
+     geom_point() + facet_wrap(~boro)
+
+```
+
